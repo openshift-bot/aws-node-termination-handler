@@ -5,4 +5,5 @@ RUN CGO_ENABLED=0 go build -mod=vendor -tags nthlinux -ldflags="-s -w" -o /go/bi
 
 FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
 COPY --from=builder /go/bin/node-termination-handler /usr/bin/
+LABEL io.openshift.release.operator=true
 ENTRYPOINT ["/usr/bin/node-termination-handler"]
