@@ -75,13 +75,26 @@ func (h *Handler) HandleEvent(drainEvent *monitor.InterruptionEvent) error {
 			Interface("fallbackNodeLabels", drainEvent.NodeLabels).
 			Str("nodeName", nodeName).
 			Msg("Failed to get node labels. Proceeding with fallback labels")
-		nodeFound = false
+		if errors.IsNotFound(err) {
+			nodeFound = false
+		}
 	} else {
 		drainEvent.NodeLabels = nodeLabels
 	}
 
 	if drainEvent.PreDrainTask != nil {
-		h.commonHandler.RunPreDrainTask(nodeName, drainEvent)
+		if err := h.commonHandler.RunPreDrainTask(nodeName, drainEvent); err != nil {
+			log.Err(err).Str("nodeName", nodeName).Msg("Pre-drain task failed; aborting to allow SQS retry")
+			h.commonHandler.InterruptionEventStore.CancelInterruptionEvent(drainEvent.EventID)
+
+			// If the node is missing and the user opted for DeleteSqsMsgIfNodeNotFound then delete the SQS message
+			if !nodeFound && h.commonHandler.NthConfig.DeleteSqsMsgIfNodeNotFound && drainEvent.PostDrainTask != nil {
+				h.commonHandler.RunPostDrainTask(nodeName, drainEvent)
+				return nil
+			}
+
+			return err
+		}
 	}
 
 	podNameList, err := h.commonHandler.Node.FetchPodNameList(nodeName)
